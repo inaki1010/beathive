@@ -1,0 +1,110 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  linux:
+    name: Arch Linux x86_64
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    steps:
+      - name: Install toolchain and dependencies
+        run: |
+          pacman -Syu --noconfirm --needed base-devel git cmake ninja pkgconf \
+            qt6-base ffmpeg taglib sqlite
+      - uses: actions/checkout@v4
+      - name: Build
+        run: |
+          cmake -S . -B build/release -G Ninja -DCMAKE_BUILD_TYPE=Release -DBH_BUILD_TESTS=ON
+          cmake --build build/release
+      - name: Test
+        run: QT_QPA_PLATFORM=offscreen ctest --test-dir build/release --output-on-failure
+      - name: Package
+        run: |
+          name=beathive-${GITHUB_REF_NAME}-linux-x86_64
+          mkdir -p "$name"
+          strip -o "$name/beathive" build/release/src/app/beathive
+          cp README.md "$name/"
+          tar czf "$name.tar.gz" "$name"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: "*.tar.gz"
+
+  windows:
+    name: Windows x64
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            mingw-w64-ucrt-x86_64-toolchain
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-pkgconf
+            mingw-w64-ucrt-x86_64-qt6-base
+            mingw-w64-ucrt-x86_64-qt6-tools
+            mingw-w64-ucrt-x86_64-ffmpeg
+            mingw-w64-ucrt-x86_64-taglib
+            mingw-w64-ucrt-x86_64-sqlite3
+            mingw-w64-ucrt-x86_64-gdb
+            zip
+      - name: Build
+        run: |
+          cmake -S . -B build/release -G Ninja -DCMAKE_BUILD_TYPE=Release -DBH_BUILD_TESTS=ON
+          cmake --build build/release
+      - name: Test
+        run: QT_QPA_PLATFORM=offscreen ctest --test-dir build/release --output-on-failure
+      - name: Backtrace of failing tests
+        if: failure()
+        run: |
+          exe=$(find build/release -name bh_ui_tests.exe | head -1)
+          QT_QPA_PLATFORM=offscreen gdb -batch -ex run -ex bt -ex "thread apply all bt 8" \
+            --args "$exe" "space toggles pause with the table focused" 2>&1 | tail -60
+      - name: Package
+        run: |
+          name=beathive-${GITHUB_REF_NAME:-dev}-windows-x64
+          mkdir -p "$name"
+          cp build/release/src/app/beathive.exe "$name/"
+          strip "$name/beathive.exe"
+          # Qt DLLs + platform plugins, then every other non-system DLL the exe pulls in.
+          deploy=$(command -v windeployqt6 || command -v windeployqt-qt6 || command -v windeployqt)
+          "$deploy" --release --no-translations --dir "$name" "$name/beathive.exe"
+          for dll in $(ldd "$name/beathive.exe" | awk '/ucrt64/ {print $3}'); do
+            cp -n "$dll" "$name/"
+          done
+          cp README.md "$name/"
+          zip -r "$name.zip" "$name"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: "*.zip"
+
+  publish:
+    name: Publish release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [linux, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" \
+            --title "BeatHive $GITHUB_REF_NAME" --generate-notes

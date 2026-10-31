@@ -1,0 +1,26 @@
+# Build output
+build/
+cmake-build-*/
+out/
+compile_commands.json
+.cache/
+CMakeUserPresets.json
+*.o
+*.a
+*.so
+
+# Local app data and settings (library databases, caches, screenshots)
+*.db
+*.db-wal
+*.db-shm
+settings.ini
+*.log
+/screenshots/
+
+# Editors / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+dist/

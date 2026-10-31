@@ -1,0 +1,5 @@
+{
+  "name": "beathive",
+  "version": "0.1.0",
+  "dependencies": [ "catch2", "sqlite3", "nlohmann-json", "taglib" ]
+}

@@ -6,11 +6,13 @@
 #include <QPushButton>
 #include <QSettings>
 #include <QSplitter>
+#include <QStackedWidget>
 #include <QTableView>
 #include <QTimer>
 
 #include "ui/app_services.hpp"
 #include "ui/cover_cache.hpp"
+#include "ui/album_tracks_view.hpp"
 #include "ui/controls.hpp"
 #include "ui/filter_browser.hpp"
 #include "ui/glyphs.hpp"
@@ -19,8 +21,10 @@
 #include "ui/now_playing_panel.hpp"
 #include "ui/playback_bridge.hpp"
 #include "ui/queue_model.hpp"
+#include "ui/tile_grid.hpp"
 #include "ui/track_table_model.hpp"
 #include "ui/transport_bar.hpp"
+#include "ui/view_selector.hpp"
 
 namespace bh::ui {
 
@@ -48,6 +52,15 @@ class MainWindow : public QMainWindow {
   db::TrackFilter base_filter() const;
   db::TrackSort current_sort() const;
   void reload_tracks();
+  void reload_albums();
+  void set_view_mode(ViewMode mode);
+  std::vector<TrackId> album_track_ids(const AlbumSummary& album);
+  DetailData detail_for(const std::vector<TrackId>& ids, const QString& title, const QString& lead);
+  void play_ids(const std::vector<TrackId>& ids, int start_row);
+  // Play / Play Next / Add to Queue for an album's tracks. `row` >= 0 narrows the queue actions to
+  // that one track (and Play starts the album from it).
+  void show_tile_menu(const std::vector<TrackId>& ids, int row, const QPoint& global, const QString& play_label);
+  db::TrackFilter current_filter() const;
   void update_empty_hint();
   void sync_playback();
   void on_tick();
@@ -71,6 +84,12 @@ class MainWindow : public QMainWindow {
   FilterBrowser* filter_;
   QLineEdit* search_;
   QTableView* table_;
+  TileGrid* albums_grid_;
+  AlbumTracksView* album_tracks_view_;
+  std::vector<AlbumSummary> albums_;
+  QStackedWidget* views_;
+  ViewSelector* view_selector_;
+  QAction *tracks_view_action_, *album_tracks_view_action_, *covers_view_action_;
   QTableView* queue_view_;
   NowPlayingPanel* now_playing_;
   TransportBar* transport_;
@@ -88,6 +107,7 @@ class MainWindow : public QMainWindow {
   SortField sort_field_ = SortField::Artist;
   bool sort_desc_ = false;
   bool user_sorted_ = false;
+  bool artists_stale_ = true;  // the sidebar artist list needs rebuilding (search or library changed)
   std::uint64_t counted_tag_ = 0;
   TrackId shown_track_;
 };

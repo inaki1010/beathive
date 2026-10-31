@@ -1,6 +1,7 @@
 find_package(Qt6 REQUIRED COMPONENTS Widgets)
 
 add_library(bh_ui STATIC
+  album_tracks_view.cpp
   app_services.cpp
   controls.cpp
   cover_cache.cpp
@@ -14,10 +15,12 @@ add_library(bh_ui STATIC
   playback_bridge.cpp
   queue_model.cpp
   theme.cpp
+  tile_grid.cpp
   track_cache.cpp
   track_delegate.cpp
   track_table_model.cpp
   transport_bar.cpp
+  view_selector.cpp
 )
 add_library(bh::ui ALIAS bh_ui)
 set_target_properties(bh_ui PROPERTIES AUTOMOC ON)

@@ -2,6 +2,7 @@
 #include <QHeaderView>
 #include <QLineEdit>
 #include <QTableView>
+#include <QTableWidget>
 #include <QtTest/QtTest>
 #include <catch2/catch_test_macros.hpp>
 
@@ -9,6 +10,9 @@
 #include "core/db/track_repo.hpp"
 #include "core/library/scanner.hpp"
 #include "fs_test_util.hpp"
+#include "ui/album_tracks_view.hpp"
+#include "ui/nav_tree.hpp"
+#include "ui/tile_grid.hpp"
 #include "ui/item_roles.hpp"
 #include "ui/main_window.hpp"
 #include "ui/qt_util.hpp"
@@ -204,4 +208,73 @@ TEST_CASE("switching theme restyles the window and survives a round trip") {
   CHECK(theme_from_name(theme_name(ThemeKind::Light)) == ThemeKind::Light);
   CHECK(theme_from_name("nonsense") == ThemeKind::Dark);
   (void)before;
+}
+
+TEST_CASE("ui: the covers view opens an album's track list on click") {
+  App app;
+  auto* selector = app.window->findChild<ViewSelector*>("view_selector");
+  auto* grid = app.window->findChild<TileGrid*>("album_grid");
+  REQUIRE(selector);
+  REQUIRE(grid);
+  CHECK(grid->isHidden());
+
+  selector->set_mode(ViewMode::Covers);
+  REQUIRE(wait_until([&] { return grid->count() > 0; }));
+  CHECK(app.table->isHidden());
+  CHECK(grid->expanded() == -1);
+
+  const QPoint tile(30, 30);  // inside the first cover
+  QTest::mouseClick(grid->viewport(), Qt::LeftButton, {}, tile);
+  CHECK(grid->expanded() == 0);
+  auto* tracks = grid->findChild<QTableWidget*>("album_tracks");
+  REQUIRE(tracks);
+  CHECK(tracks->rowCount() == app.table->model()->rowCount());
+
+  QTest::mouseClick(grid->viewport(), Qt::LeftButton, {}, tile);  // again closes it
+  CHECK(grid->expanded() == -1);
+
+  selector->set_mode(ViewMode::Tracks);
+  CHECK(grid->isHidden());
+}
+
+TEST_CASE("ui: the sidebar lists artists and picking one filters the library") {
+  App app;
+  auto* nav = app.window->findChild<NavTree*>("nav");
+  REQUIRE(nav);
+  REQUIRE(wait_until([&] { return nav->topLevelItem(1)->childCount() == 1; }));
+  CHECK(nav->topLevelItem(1)->child(0)->text(0) == "Artist One");
+  CHECK(!nav->current_artist());
+
+  nav->setCurrentItem(nav->topLevelItem(1)->child(0));
+  REQUIRE(wait_until([&] { return nav->current_artist().has_value(); }));
+  CHECK(*nav->current_artist() == "Artist One");
+  CHECK(nav->current_source() == NavSource::AllMusic);
+  REQUIRE(wait_until([&] { return app.table->model()->rowCount() == 5; }));
+
+  app.search->setText("zzzzqqq");  // the artist no longer matches: the list empties and the selection resets
+  REQUIRE(wait_until([&] { return nav->topLevelItem(1)->childCount() == 0; }));
+  CHECK(!nav->current_artist());
+}
+
+TEST_CASE("ui: the album and tracks view shows every track of each album") {
+  App app;
+  auto* selector = app.window->findChild<ViewSelector*>("view_selector");
+  auto* view = app.window->findChild<AlbumTracksView*>("album_tracks_view");
+  REQUIRE(selector);
+  REQUIRE(view);
+
+  selector->set_mode(ViewMode::AlbumTracks);
+  REQUIRE(wait_until([&] { return view->count() == 1; }));
+  CHECK(app.table->isHidden());
+
+  QTest::mouseClick(view->viewport(), Qt::LeftButton, {}, QPoint(30, 30));  // the cover
+  CHECK(view->selection() == AlbumTracksView::Pos{0, -1});
+
+  int played_row = -1;
+  QObject::connect(view, &AlbumTracksView::play_requested, [&](int, int row) { played_row = row; });
+  QTest::keyClick(view, Qt::Key_Down);
+  CHECK(view->selection() == AlbumTracksView::Pos{0, 0});
+  QTest::keyClick(view, Qt::Key_Down);
+  QTest::keyClick(view, Qt::Key_Return);
+  CHECK(played_row == 1);
 }

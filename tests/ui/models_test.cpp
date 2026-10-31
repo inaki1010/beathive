@@ -3,6 +3,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "db_test_util.hpp"
+#include "ui/tile_grid.hpp"
 #include "ui/filter_browser.hpp"
 #include "ui/queue_model.hpp"
 #include "ui/track_table_model.hpp"
@@ -152,4 +153,16 @@ TEST_CASE("queue model shows the queue and highlights what is playing") {
   CHECK(m.entry_id_at(1) == 11);
   CHECK(m.row_of_entry(12) == 2);
   CHECK(m.row_of_entry(99) == -1);
+}
+
+TEST_CASE("album tiles describe their album") {
+  AlbumSummary a;
+  a.key = {"Daft Punk", "Discovery"};
+  a.year = 2001;
+  CHECK(album_item(a).title == "Discovery");
+  CHECK(album_item(a).subtitle == "Daft Punk \u00b7 2001");
+
+  AlbumSummary untagged;
+  CHECK(album_item(untagged).title == "[Unknown Album]");
+  CHECK(album_item(untagged).subtitle == "Unknown Artist");
 }

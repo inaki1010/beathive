@@ -26,7 +26,7 @@ QPixmap CoverCache::get(ArtId id, int size) {
   QPixmap pm;
   if (!img.isNull()) pm = QPixmap::fromImage(img.scaled(size, size, Qt::KeepAspectRatio, Qt::SmoothTransformation));
 
-  if (cache_.size() > 64) cache_.clear();
+  if (cache_.size() > 600) cache_.clear();
   cache_[key] = pm;  // negative results are cached too
   return pm;
 }

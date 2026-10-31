@@ -97,6 +97,13 @@ QPushButton:hover { border-color: @dim@; }
 QPushButton:pressed { background: @hover@; }
 QPushButton:disabled { color: @faint@; }
 QPushButton[accent="true"] { background: @accent@; color: @accent_text@; border: 1px solid @accent@; font-weight: 600; }
+#viewbar { background: @bg@; }
+QWidget#view_selector { background: @bg@; border-radius: 9px; }
+QPushButton[segment="true"] { background: transparent; color: @dim@; border: none; border-radius: 7px; padding: 6px 16px; font-weight: 600; }
+QPushButton[segment="true"]:hover { color: @text@; }
+QPushButton[segment="true"]:checked { background: @raised@; color: @text@; }
+#album_detail { background: @panel@; border-radius: 10px; }
+#album_detail QTableWidget { background: transparent; }
 QPushButton[accent="true"]:hover { background: @accent@; border-color: @text@; }
 QPushButton#flat { background: transparent; border: none; color: @dim@; padding: 3px 8px; }
 QPushButton#flat:hover { color: @text@; background: @hover@; }

@@ -173,7 +173,19 @@ void MainWindow::build_ui() {
   clay->setContentsMargins(0, 0, 0, 0);
   clay->setSpacing(1);
   clay->addWidget(filter_);
-  clay->addWidget(table_, 1);
+  albums_grid_ = new TileGrid(covers_, [this](int i) {
+    const AlbumSummary& a = albums_[static_cast<std::size_t>(i)];
+    const TileItem item = album_item(a);
+    return detail_for(album_track_ids(a), item.title, item.subtitle);
+  }, this);
+  album_tracks_view_ = new AlbumTracksView(covers_, cache_, [this](int i) {
+    return album_track_ids(albums_[static_cast<std::size_t>(i)]);
+  }, this);
+  views_ = new QStackedWidget(this);
+  views_->addWidget(table_);
+  views_->addWidget(album_tracks_view_);
+  views_->addWidget(albums_grid_);
+  clay->addWidget(views_, 1);
   empty_state_->setParent(center);
   center->installEventFilter(this);
 
@@ -283,11 +295,23 @@ void MainWindow::build_ui() {
   connect(search_, &QLineEdit::textChanged, this, [this](const QString& t) { clear_action_->setVisible(!t.isEmpty()); });
   connect(clear_action_, &QAction::triggered, search_, &QLineEdit::clear);
 
+  // The view selector gets a strip of its own under the top bar, centred.
+  auto* viewbar = new QWidget(this);
+  viewbar->setObjectName("viewbar");
+  viewbar->setAttribute(Qt::WA_StyledBackground);
+  view_selector_ = new ViewSelector(viewbar);
+  auto* vlay = new QHBoxLayout(viewbar);
+  vlay->setContentsMargins(16, 0, 16, 10);
+  vlay->addStretch();
+  vlay->addWidget(view_selector_);
+  vlay->addStretch();
+
   auto* root = new QWidget(this);
   auto* rlay = new QVBoxLayout(root);
   rlay->setContentsMargins(0, 0, 0, 0);
   rlay->setSpacing(0);
   rlay->addWidget(top);
+  rlay->addWidget(viewbar);
   rlay->addWidget(main_split_, 1);
   rlay->addWidget(transport_);
   setCentralWidget(root);
@@ -304,13 +328,29 @@ void MainWindow::build_ui() {
   statusBar()->addPermanentWidget(progress_);
 
   // --- wiring ---
-  connect(nav_, &NavTree::sourceSelected, this, [this](NavSource) {
+  connect(nav_, &NavTree::selectionChanged, this, [this] {
     user_sorted_ = false;
     reload_timer_.start();
   });
-  connect(search_, &QLineEdit::textChanged, this, [this] { search_timer_.start(); });
+  connect(search_, &QLineEdit::textChanged, this, [this] {
+    artists_stale_ = true;
+    search_timer_.start();
+  });
   connect(empty_add_, &QPushButton::clicked, this, &MainWindow::add_folder_dialog);
   connect(filter_, &FilterBrowser::filterChanged, this, &MainWindow::reload_tracks);
+  connect(view_selector_, &ViewSelector::modeChanged, this, &MainWindow::set_view_mode);
+  connect(albums_grid_, &TileGrid::play_requested, this, [this](int i, int row) {
+    play_ids(album_track_ids(albums_[static_cast<std::size_t>(i)]), row);
+  });
+  connect(albums_grid_, &TileGrid::context_requested, this, [this](int i, const QPoint& global) {
+    show_tile_menu(album_track_ids(albums_[static_cast<std::size_t>(i)]), -1, global, tr("Play Album"));
+  });
+  connect(album_tracks_view_, &AlbumTracksView::play_requested, this, [this](int i, int row) {
+    play_ids(album_track_ids(albums_[static_cast<std::size_t>(i)]), row);
+  });
+  connect(album_tracks_view_, &AlbumTracksView::context_requested, this, [this](int i, int row, const QPoint& global) {
+    show_tile_menu(album_track_ids(albums_[static_cast<std::size_t>(i)]), row, global, row < 0 ? tr("Play Album") : tr("Play"));
+  });
   connect(header, &QHeaderView::sortIndicatorChanged, this, [this](int col, Qt::SortOrder order) {
     auto f = TrackTableModel::sort_field(col);
     if (!f) return;  // not sortable; leave the previous sort in place
@@ -406,6 +446,21 @@ void MainWindow::build_menus() {
     QSignalBlocker b(filter_button_);
     filter_button_->setChecked(on);
   });
+  auto* modes = new QActionGroup(this);
+  tracks_view_action_ = view->addAction(tr("&Tracks"));
+  album_tracks_view_action_ = view->addAction(tr("&Album && Tracks"));
+  covers_view_action_ = view->addAction(tr("Album &Covers"));
+  tracks_view_action_->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_1));
+  album_tracks_view_action_->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_2));
+  covers_view_action_->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_3));
+  for (auto* a : {tracks_view_action_, album_tracks_view_action_, covers_view_action_}) {
+    a->setCheckable(true);
+    modes->addAction(a);
+  }
+  tracks_view_action_->setChecked(true);
+  connect(tracks_view_action_, &QAction::triggered, this, [this] { view_selector_->set_mode(ViewMode::Tracks); });
+  connect(album_tracks_view_action_, &QAction::triggered, this, [this] { view_selector_->set_mode(ViewMode::AlbumTracks); });
+  connect(covers_view_action_, &QAction::triggered, this, [this] { view_selector_->set_mode(ViewMode::Covers); });
   view->addSeparator();
   auto* themes = view->addMenu(tr("&Theme"));
   auto* group = new QActionGroup(this);
@@ -466,6 +521,10 @@ void MainWindow::restore_settings() {
   filter_action_->setChecked(settings_.value("view/filter_browser", true).toBool());
   side_action_->setChecked(settings_.value("view/side_panel", true).toBool());
   filter_->setVisible(filter_action_->isChecked());
+  {
+    const QString mode = settings_.value("view/mode", "tracks").toString();
+    view_selector_->set_mode(mode == "album_tracks" ? ViewMode::AlbumTracks : mode == "covers" ? ViewMode::Covers : ViewMode::Tracks);
+  }
   main_split_->widget(2)->setVisible(side_action_->isChecked());
 }
 
@@ -477,6 +536,9 @@ void MainWindow::save_settings() {
   settings_.setValue("playback/volume", transport_->volume_percent());
   settings_.setValue("view/filter_browser", filter_action_->isChecked());
   settings_.setValue("view/side_panel", side_action_->isChecked());
+  settings_.setValue("view/mode", view_selector_->mode() == ViewMode::AlbumTracks ? "album_tracks"
+                                  : view_selector_->mode() == ViewMode::Covers    ? "covers"
+                                                                                  : "tracks");
   settings_.sync();
 }
 
@@ -492,6 +554,7 @@ void MainWindow::closeEvent(QCloseEvent* e) {
 db::TrackFilter MainWindow::base_filter() const {
   db::TrackFilter f;
   f.search = stdstr(search_->text());
+  if (auto artist = nav_->current_artist()) f.artists = {*artist};
   RuleGroup rules;
   switch (nav_->current_source()) {
     case NavSource::AllMusic: break;
@@ -513,13 +576,95 @@ db::TrackSort MainWindow::current_sort() const {
 }
 
 void MainWindow::reload_all() {
+  if (artists_stale_) {
+    artists_stale_ = false;
+    db::TrackFilter all;  // the sidebar lists every artist that matches the search, whatever is selected
+    all.search = stdstr(search_->text());
+    if (auto artists = db::Query(app_.db).artists(all)) nav_->set_artists(*artists);
+  }
   filter_->set_base(base_filter());
   reload_tracks();
 }
 
+db::TrackFilter MainWindow::current_filter() const {
+  return filter_->isVisible() || filter_action_->isChecked() ? filter_->filter() : base_filter();
+}
+
+void MainWindow::set_view_mode(ViewMode mode) {
+  switch (mode) {
+    case ViewMode::Tracks:
+      views_->setCurrentWidget(table_);
+      tracks_view_action_->setChecked(true);
+      break;
+    case ViewMode::AlbumTracks:
+      views_->setCurrentWidget(album_tracks_view_);
+      album_tracks_view_action_->setChecked(true);
+      break;
+    case ViewMode::Covers:
+      views_->setCurrentWidget(albums_grid_);
+      covers_view_action_->setChecked(true);
+      break;
+  }
+  reload_tracks();
+}
+
+void MainWindow::reload_albums() {
+  auto albums = db::Query(app_.db).albums(current_filter());
+  albums_ = albums ? std::move(*albums) : std::vector<AlbumSummary>{};
+  if (view_selector_->mode() == ViewMode::Covers) {
+    std::vector<TileItem> items;
+    for (const auto& a : albums_) items.push_back(album_item(a));
+    albums_grid_->set_items(std::move(items));
+  } else {
+    std::vector<AlbumBlock> blocks;
+    for (const auto& a : albums_) {
+      const TileItem item = album_item(a);
+      blocks.push_back({item.title, item.subtitle, a.art, a.track_count});
+    }
+    album_tracks_view_->set_albums(std::move(blocks));
+    album_tracks_view_->set_now_playing(shown_track_);
+  }
+}
+
+std::vector<TrackId> MainWindow::album_track_ids(const AlbumSummary& album) {
+  auto filter = current_filter();
+  filter.album_artist = album.key.album_artist;
+  filter.album = album.key.album;
+  auto ids = db::Query(app_.db).tracks(filter, {SortField::Album, false});
+  return ids ? std::move(*ids) : std::vector<TrackId>{};
+}
+
+DetailData MainWindow::detail_for(const std::vector<TrackId>& ids, const QString& title, const QString& lead) {
+  DetailData d;
+  d.title = title;
+  for (TrackId id : ids)
+    if (const Track* t = cache_.get(id)) d.tracks.push_back(t);
+  d.meta = track_meta(lead, d.tracks);
+  return d;
+}
+
+void MainWindow::play_ids(const std::vector<TrackId>& ids, int start_row) {
+  if (ids.empty()) return;
+  app_.controller.play_tracks(ids, static_cast<std::size_t>(std::clamp<int>(start_row, 0, static_cast<int>(ids.size()) - 1)));
+}
+
+void MainWindow::show_tile_menu(const std::vector<TrackId>& ids, int row, const QPoint& global, const QString& play_label) {
+  if (ids.empty()) return;
+  const bool one = row >= 0 && row < static_cast<int>(ids.size());
+  const std::vector<TrackId> picked_ids = one ? std::vector<TrackId>{ids[static_cast<std::size_t>(row)]} : ids;
+  QMenu menu(this);
+  auto* play = menu.addAction(play_label);
+  auto* next = menu.addAction(tr("Play Next"));
+  auto* queue = menu.addAction(tr("Add to Queue"));
+  auto* picked = menu.exec(global);
+  if (picked == play) play_ids(ids, one ? row : 0);
+  else if (picked == next) app_.controller.play_next(picked_ids);
+  else if (picked == queue) app_.controller.enqueue(picked_ids);
+}
+
 void MainWindow::reload_tracks() {
   cache_.invalidate();
-  auto filter = filter_->isVisible() || filter_action_->isChecked() ? filter_->filter() : base_filter();
+  auto filter = current_filter();
   const bool limited = nav_->current_source() != NavSource::AllMusic;
   const std::optional<int> limit = limited ? std::optional<int>(kRecentLimit) : std::nullopt;
 
@@ -536,6 +681,11 @@ void MainWindow::reload_tracks() {
                 : total_min >= 60    ? tr(" · %1 h %2 min").arg(total_min / 60).arg(total_min % 60)
                                      : tr(" · %1 min").arg(total_min);
     }
+  if (view_selector_->mode() != ViewMode::Tracks) {
+    reload_albums();
+    const auto n = albums_.size();
+    status = (n == 1 ? tr("1 album") : tr("%1 albums").arg(n)) + " · " + status;
+  }
   if (!library_.scanning()) status_label_->setText(status);
   update_empty_hint();
 }
@@ -635,6 +785,7 @@ void MainWindow::sync_playback() {
   auto now = app_.controller.now_playing();
   shown_track_ = now ? now->track : TrackId{};
   model_.set_now_playing(shown_track_);
+  album_tracks_view_->set_now_playing(shown_track_);
   const Track* t = shown_track_ ? cache_.get(shown_track_) : nullptr;
   now_playing_->show_track(t);
   transport_->set_cover(t && t->art ? covers_.get(t->art, static_cast<int>(transport_->cover_side() * devicePixelRatioF())) : QPixmap());
@@ -676,6 +827,7 @@ void MainWindow::add_folder_dialog() {
   LibraryDialog dlg(app_.db, this);
   dlg.exec();
   if (dlg.changed()) {
+    artists_stale_ = true;
     reload_all();
     library_.scan_all();
   }
@@ -683,6 +835,7 @@ void MainWindow::add_folder_dialog() {
 
 void MainWindow::on_scan_finished(int added, int updated, int missing, int errors, bool cancelled) {
   progress_->hide();
+  artists_stale_ = true;
   reload_all();
   if (cancelled) {
     statusBar()->showMessage(tr("Scan cancelled"), 5000);

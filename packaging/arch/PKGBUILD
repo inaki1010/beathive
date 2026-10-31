@@ -8,6 +8,7 @@ url='https://github.com/inaki1010/heatvibe'
 license=(custom)
 depends=(qt6-base ffmpeg taglib sqlite)
 makedepends=(cmake ninja pkgconf)
+options=(!debug)  # the release binary is stripped; no separate -debug package
 # CI sets BH_SRCDIR to build the checked-out tree; otherwise use the tagged release tarball.
 if [[ -n ${BH_SRCDIR:-} ]]; then
   source=()

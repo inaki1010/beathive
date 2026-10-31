@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=BeatHive
+GenericName=Music Player
+Comment=Fast local music library and player
+Exec=beathive
+Icon=beathive
+Terminal=false
+Categories=AudioVideo;Audio;Player;Qt;
+Keywords=music;audio;player;library;mp3;flac;
+StartupWMClass=beathive

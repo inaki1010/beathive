@@ -1,6 +1,7 @@
 #include <QApplication>
 #include <QCommandLineParser>
 #include <QDir>
+#include <QIcon>
 #include <QPixmap>
 #include <QSettings>
 #include <QStandardPaths>
@@ -17,6 +18,8 @@ int main(int argc, char** argv) {
   QApplication::setOrganizationName("beathive");
   QApplication::setApplicationDisplayName("BeatHive");
   QApplication::setApplicationVersion("0.1.0");
+  QApplication::setDesktopFileName("beathive");
+  QApplication::setWindowIcon(QIcon::fromTheme("beathive"));
 
   QCommandLineParser cli;
   cli.setApplicationDescription("BeatHive music library");

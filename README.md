@@ -21,7 +21,7 @@ Not yet: playlists UI, tag editor, equalizer / ReplayGain, media-key integration
 
 ## Download
 
-Prebuilt packages are on the Releases page: `beathive-<version>-linux-x86_64.tar.gz` (Arch; needs `qt6-base ffmpeg taglib sqlite` installed) and `beathive-<version>-windows-x64.zip` (self-contained; unzip and run `beathive.exe`). Pushing a `v*` tag builds and publishes both via GitHub Actions.
+Prebuilt packages are on the Releases page: `beathive-<version>-x86_64.pkg.tar.zst` (Arch; install with `sudo pacman -U <file>`, which pulls in the dependencies and adds BeatHive to your app menu) and `beathive-<version>-windows-x64.zip` (self-contained; unzip and run `beathive.exe`). Pushing a `v*` tag builds and publishes both via GitHub Actions.
 
 ## Build
 

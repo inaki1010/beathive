@@ -1,0 +1,29 @@
+# Maintainer: inakip <inakiperez003@gmail.com>
+pkgname=beathive
+pkgver=0.1.0
+pkgrel=1
+pkgdesc='Fast local music library and player'
+arch=(x86_64)
+url='https://github.com/inaki1010/heatvibe'
+license=(custom)
+depends=(qt6-base ffmpeg taglib sqlite)
+makedepends=(cmake ninja pkgconf)
+# CI sets BH_SRCDIR to build the checked-out tree; otherwise use the tagged release tarball.
+if [[ -n ${BH_SRCDIR:-} ]]; then
+  source=()
+else
+  source=("$pkgname-$pkgver.tar.gz::$url/archive/v$pkgver.tar.gz")
+  sha256sums=(SKIP)
+fi
+
+_srcdir() { echo "${BH_SRCDIR:-$srcdir/heatvibe-$pkgver}"; }
+
+build() {
+  cmake -S "$(_srcdir)" -B build -G Ninja \
+    -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr -DBH_BUILD_TESTS=OFF
+  cmake --build build
+}
+
+package() {
+  DESTDIR="$pkgdir" cmake --install build --strip
+}
